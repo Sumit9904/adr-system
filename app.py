@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request, redirect, session
+from flask import Flask, render_template, request, redirect, session, url_for
 import sqlite3
-
+import os
+from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
+app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_fallback_key")
 
 # ---------- DATABASE INIT ----------
 def init_db():
@@ -18,6 +19,22 @@ def init_db():
             severity TEXT
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )
+    """)
+
+    # Create default admin if not exists
+    cursor.execute("SELECT * FROM users WHERE username = ?", ("admin",))
+    if not cursor.fetchone():
+        hashed_password = generate_password_hash("1234")
+        cursor.execute(
+            "INSERT INTO users (username, password) VALUES (?, ?)",
+            ("admin", hashed_password)
+        )
     conn.commit()
     conn.close()
 
@@ -31,9 +48,15 @@ def login():
         password = request.form['password']
 
         # Simple hardcoded login
-        if username == "admin" and password == "1234":
+        conn = sqlite3.connect("adr.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+        user = cursor.fetchone()
+        conn.close()
+
+        if user and check_password_hash(user[0], password):
             session['user'] = username
-            return redirect('/')
+            return redirect(url_for('home'))
         else:
             return "Invalid Credentials"
 

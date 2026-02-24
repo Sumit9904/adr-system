@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ADR Reporting System</title>
+    <style>
+        body {
+            font-family: Arial;
+            background-color: #f4f6f9;
+            padding: 30px;
+        }
+
+        h2 {
+            color: #2c3e50;
+        }
+
+        form {
+            background: white;
+            padding: 20px;
+            width: 350px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        input, textarea, select {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px;
+            width: 100%;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        table {
+            margin-top: 30px;
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        th {
+            background-color: #2c3e50;
+            color: white;
+            padding: 12px;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+        }
+
+        tr:hover {
+            background-color: #f2f2f2;
+        }
+
+        a {
+            color: red;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+        a:hover {
+            color: darkred;
+        }
+        form[method="GET"] {
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
+form[method="GET"] input {
+    width: 250px;
+}
+        <a href="/logout">Logout</a>
+    </style>
+</head>
+<body>
+
+<h2>💊 ADR Reporting System</h2>
+
+<form method="POST" action="/add">
+    <input type="text" name="name" placeholder="Patient Name" required>
+    <input type="number" name="age" placeholder="Age" required>
+    <input type="text" name="drug" placeholder="Drug Name" required>
+    <textarea name="reaction" placeholder="Reaction" required></textarea>
+
+    <select name="severity" required>
+        <option value="">Select Severity</option>
+        <option value="Serious">Serious</option>
+        <option value="Non-Serious">Non-Serious</option>
+    </select>
+
+    <button type="submit">Submit ADR</button>
+</form>
+<form method="GET" action="/">
+    <input type="text" name="search" placeholder="Search by Name, Drug, Severity">
+    <button type="submit">Search</button>
+</form>
+
+<h3>Submitted ADR Reports</h3>
+
+<table>
+    <tr>
+        <th>Patient</th>
+        <th>Age</th>
+        <th>Drug</th>
+        <th>Reaction</th>
+        <th>Severity</th>
+        <th>Action</th>
+    </tr>
+
+    {% for adr in adr_list %}
+    <tr>
+        <td>{{ adr[1] }}</td>
+        <td>{{ adr[2] }}</td>
+        <td>{{ adr[3] }}</td>
+        <td>{{ adr[4] }}</td>
+        <td>{{ adr[5] }}</td>
+        <td>
+            <a href="/delete/{{ adr[0] }}" onclick="return confirm('Are you sure?')">
+                ❌ Delete
+            </a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+</body>
+</html>

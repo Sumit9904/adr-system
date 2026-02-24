@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, redirect, session, url_for
-import sqlite3
 import os
 import psycopg2
 from urllib.parse import urlparse
@@ -8,29 +7,26 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_fallback_key")
 
-# -------- DATABASE CONFIG --------
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def get_connection():
-    if DATABASE_URL:
-        url = urlparse(DATABASE_URL)
-        return psycopg2.connect(
-            host=url.hostname,
-            database=url.path[1:],
-            user=url.username,
-            password=url.password,
-            port=url.port
-        )
-    else:
-        return sqlite3.connect("adr.db")
+if not DATABASE_URL:
+    raise Exception("DATABASE_URL is not set!")
 
+def get_connection():
+    url = urlparse(DATABASE_URL)
+    return psycopg2.connect(
+        host=url.hostname,
+        database=url.path[1:],
+        user=url.username,
+        password=url.password,
+        port=url.port
+    )
 
 # -------- DATABASE INIT --------
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # ADR Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS adr (
             id SERIAL PRIMARY KEY,
@@ -42,7 +38,6 @@ def init_db():
         )
     """)
 
-    # Users Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
@@ -51,7 +46,6 @@ def init_db():
         )
     """)
 
-    # Create default admin
     cursor.execute("SELECT * FROM users WHERE username = %s", ("admin",))
     if not cursor.fetchone():
         hashed_password = generate_password_hash("1234")
@@ -64,7 +58,6 @@ def init_db():
     conn.close()
 
 init_db()
-
 
 # -------- LOGIN --------
 @app.route('/login', methods=['GET', 'POST'])
@@ -87,13 +80,11 @@ def login():
 
     return render_template("login.html")
 
-
 # -------- LOGOUT --------
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
-
 
 # -------- HOME --------
 @app.route('/')
@@ -109,7 +100,7 @@ def home():
     if search_query:
         cursor.execute("""
             SELECT * FROM adr
-            WHERE name LIKE %s OR drug LIKE %s OR severity LIKE %s
+            WHERE name ILIKE %s OR drug ILIKE %s OR severity ILIKE %s
         """, (
             f"%{search_query}%",
             f"%{search_query}%",
@@ -122,7 +113,6 @@ def home():
     conn.close()
 
     return render_template("index.html", adr_list=data)
-
 
 # -------- ADD --------
 @app.route('/add', methods=['POST'])
@@ -147,7 +137,6 @@ def add():
 
     return redirect(url_for('home'))
 
-
 # -------- DELETE --------
 @app.route('/delete/<int:id>')
 def delete(id):
@@ -161,7 +150,6 @@ def delete(id):
     conn.close()
 
     return redirect(url_for('home'))
-
 
 if __name__ == "__main__":
     app.run()

@@ -1,3 +1,5 @@
+from openpyxl import Workbook
+from io import BytesIO
 from flask import Flask, render_template, request, redirect, url_for, session, flash, Response
 import psycopg2
 import os
@@ -134,33 +136,50 @@ def export():
     cur.close()
     conn.close()
 
-    def generate():
-        data_stream = []
-        writer = csv.writer(data_stream)
-        yield "ID,Name,Age,Drug,Reaction,Severity\n"
-        for row in data:
-            yield f"{row[0]},{row[1]},{row[2]},{row[3]},{row[4]},{row[5]}\n"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "ADR Data"
 
-    return Response(generate(), mimetype="text/csv",
-                    headers={"Content-Disposition": "attachment;filename=adr_data.csv"})
+    headers = ["ID", "Name", "Age", "Drug", "Reaction", "Severity"]
+    ws.append(headers)
 
+    for row in data:
+        ws.append(row)
 
+    file_stream = BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)
+
+    return Response(
+        file_stream,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=adr_data.xlsx"}
+    )
 # ---------------- DASHBOARD ---------------- #
 @app.route("/dashboard")
 @login_required
 def dashboard():
     conn = get_connection()
     cur = conn.cursor()
+
     cur.execute("SELECT COUNT(*) FROM adr")
     total = cur.fetchone()[0]
 
     cur.execute("SELECT severity, COUNT(*) FROM adr GROUP BY severity")
     severity_data = cur.fetchall()
 
+    labels = [row[0] for row in severity_data]
+    values = [row[1] for row in severity_data]
+
     cur.close()
     conn.close()
 
-    return render_template("dashboard.html", total=total, severity=severity_data)
+    return render_template(
+        "dashboard.html",
+        total=total,
+        labels=labels,
+        values=values
+    )
 
 
 if __name__ == "__main__":

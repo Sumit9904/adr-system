@@ -131,6 +131,7 @@ form[method="GET"] input {
         <td>{{ adr[4] }}</td>
         <td>{{ adr[5] }}</td>
         <td>
+            <a href="/edit/{{ adr[0] }}">Edit</a>
             <a href="/delete/{{ adr[0] }}" onclick="return confirm('Are you sure?')">
                 ❌ Delete
             </a>

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit ADR</title>
+</head>
+<body>
+    <h2>Edit ADR Record</h2>
+
+    <form action="/update/{{ adr[0] }}" method="POST">
+        Name: <input type="text" name="name" value="{{ adr[1] }}" required><br><br>
+        Age: <input type="number" name="age" value="{{ adr[2] }}" required><br><br>
+        Drug: <input type="text" name="drug" value="{{ adr[3] }}" required><br><br>
+        Reaction: <input type="text" name="reaction" value="{{ adr[4] }}" required><br><br>
+        Severity: <input type="text" name="severity" value="{{ adr[5] }}" required><br><br>
+
+        <button type="submit">Update</button>
+    </form>
+
+    <br>
+    <a href="/">Back</a>
+</body>
+</html>

@@ -150,6 +150,49 @@ def delete(id):
 
     return redirect(url_for("home"))
 
+
+# ------------------ EDIT PAGE ------------------ #
+@app.route("/edit/<int:id>")
+def edit(id):
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM adr WHERE id = %s", (id,))
+    data = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    return render_template("edit.html", adr=data)
+
+
+# ------------------ UPDATE ------------------ #
+@app.route("/update/<int:id>", methods=["POST"])
+def update(id):
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    name = request.form["name"]
+    age = request.form["age"]
+    drug = request.form["drug"]
+    reaction = request.form["reaction"]
+    severity = request.form["severity"]
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE adr
+        SET name=%s, age=%s, drug=%s, reaction=%s, severity=%s
+        WHERE id=%s
+    """, (name, age, drug, reaction, severity, id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return redirect(url_for("home"))
+
 # ------------------ RUN ------------------ #
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

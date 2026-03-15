@@ -1,42 +1,59 @@
-<!DOCTYPE html>
-<html>
-<head>
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block page_title %}Admin Analytics Dashboard{% endblock %}
 
-<title>Admin Dashboard</title>
-
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
-</head>
-
-<body>
-
-<div class="container mt-5">
-
-<h1>Admin Dashboard</h1>
-
-<hr>
-
-<div class="row">
-
-<div class="col-md-6">
-<div class="card p-4">
-<h3>Total Users</h3>
-<h2>{{ users }}</h2>
-</div>
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Total Users</small><h4>{{ metrics.total_users }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Total ADR Reports</small><h4>{{ metrics.total_reports }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Severe Cases</small><h4 class="text-danger">{{ metrics.severe_cases }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Tracked Drugs</small><h4>{{ metrics.unique_drugs }}</h4></div></div>
 </div>
 
-<div class="col-md-6">
-<div class="card p-4">
-<h3>Total ADR Reports</h3>
-<h2>{{ reports }}</h2>
+<div class="row g-4">
+    <div class="col-lg-6">
+        <div class="card stat-card p-3">
+            <h5>ADR Severity Distribution</h5>
+            <canvas id="severityChart" height="220"></canvas>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card stat-card p-3">
+            <h5>Top 5 Drugs by ADR Count</h5>
+            <canvas id="drugChart" height="220"></canvas>
+        </div>
+    </div>
 </div>
-</div>
+{% endblock %}
 
-</div>
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+new Chart(document.getElementById('severityChart'), {
+    type: 'doughnut',
+    data: {
+        labels: {{ severity_labels|tojson }},
+        datasets: [{
+            data: {{ severity_values|tojson }},
+            backgroundColor: ['#198754','#ffc107','#dc3545','#0dcaf0','#6f42c1']
+        }]
+    }
+});
 
-<a href="/" class="btn btn-primary mt-4">Back</a>
-
-</div>
-
-</body>
-</html>
+new Chart(document.getElementById('drugChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ drug_labels|tojson }},
+        datasets: [{
+            label: 'Reports',
+            data: {{ drug_values|tojson }},
+            backgroundColor: '#0d6efd'
+        }]
+    },
+    options: {
+        scales: { y: { beginAtZero: true } },
+        plugins: { legend: { display: false } }
+    }
+});
+</script>
+{% endblock %}

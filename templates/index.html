@@ -1,8 +1,80 @@
 {% extends "base.html" %}
 
-{% block title %}ADR Records{% endblock %}
-{% block page_title %}ADR Records{% endblock %}
+{% block title %}ADR Reports{% endblock %}
+{% block page_title %}ADR Reports{% endblock %}
 
 {% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card p-3"><small class="text-muted">Total Reports</small><h4 class="mb-0">{{ metrics.total_reports }}</h4></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card p-3"><small class="text-muted">Severe Cases</small><h4 class="mb-0 text-danger">{{ metrics.severe_cases }}</h4></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card p-3"><small class="text-muted">Tracked Drugs</small><h4 class="mb-0">{{ metrics.unique_drugs }}</h4></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card p-3"><small class="text-muted">Registered Users</small><h4 class="mb-0">{{ metrics.total_users }}</h4></div>
+    </div>
+</div>
 
+<div class="row g-4">
+    <div class="col-lg-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h5 class="card-title">Add ADR Report</h5>
+                <form method="POST" action="{{ url_for('add') }}">
+                    <input class="form-control mb-2" name="name" placeholder="Patient Name" required>
+                    <input class="form-control mb-2" type="number" min="0" name="age" placeholder="Age" required>
+                    <input class="form-control mb-2" name="drug" placeholder="Drug" required>
+                    <textarea class="form-control mb-2" name="reaction" rows="3" placeholder="Reaction" required></textarea>
+                    <select class="form-select mb-3" name="severity" required>
+                        <option value="Mild">Mild</option>
+                        <option value="Moderate">Moderate</option>
+                        <option value="Severe">Severe</option>
+                    </select>
+                    <button class="btn btn-primary w-100">Submit</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="table-wrap p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">ADR Records</h5>
+                <form method="GET" class="d-flex" action="{{ url_for('home') }}">
+                    <input class="form-control me-2" name="search" value="{{ search_query }}" placeholder="Search name/drug/severity">
+                    <button class="btn btn-outline-primary">Search</button>
+                </form>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th><th>Name</th><th>Age</th><th>Drug</th><th>Reaction</th><th>Severity</th><th>Date</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for adr in adr_list %}
+                        <tr>
+                            <td>{{ adr[0] }}</td>
+                            <td>{{ adr[1] }}</td>
+                            <td>{{ adr[2] }}</td>
+                            <td>{{ adr[3] }}</td>
+                            <td>{{ adr[4] }}</td>
+                            <td><span class="badge {% if adr[5] == 'Severe' %}text-bg-danger{% elif adr[5] == 'Moderate' %}text-bg-warning{% else %}text-bg-success{% endif %}">{{ adr[5] }}</span></td>
+                            <td>{{ adr[6].strftime('%Y-%m-%d') if adr[6] else '-' }}</td>
+                            <td><a class="btn btn-sm btn-outline-danger" href="{{ url_for('delete', adr_id=adr[0]) }}" onclick="return confirm('Delete this record?');">Delete</a></td>
+                        </tr>
+                    {% else %}
+                        <tr><td colspan="8" class="text-center text-muted py-4">No ADR reports found.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

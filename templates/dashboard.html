@@ -1,56 +1,6 @@
 {% extends "base.html" %}
-
-{% block title %}Analytics Dashboard{% endblock %}
-{% block page_title %}Analytics Dashboard{% endblock %}
-
+{% block title %}Analytics{% endblock %}
+{% block page_title %}Analytics{% endblock %}
 {% block content %}
-
-{% extends "base.html" %}
-
-{% block content %}
-
-<h2 class="mb-4">Dashboard Analytics</h2>
-
-<!-- KPI Card -->
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card p-4">
-            <h5>Total ADR Reports</h5>
-            <h2>{{ total }}</h2>
-        </div>
-    </div>
-</div>
-
-<!-- Chart Card -->
-<div class="card p-4">
-    <h5>Severity Distribution</h5>
-    <canvas id="severityChart"></canvas>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<script>
-    const ctx = document.getElementById('severityChart').getContext('2d');
-
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: {{ labels|tojson }},
-            datasets: [{
-                label: 'Number of Cases',
-                data: {{ values|tojson }},
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true
-                }
-            }
-        }
-    });
-</script>
-
+<div class="alert alert-info">Analytics has moved to the <a href="{{ url_for('admin_panel') }}">Admin Dashboard</a>.</div>
 {% endblock %}

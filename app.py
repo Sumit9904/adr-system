@@ -54,16 +54,16 @@ def init_db():
         '''
     )
 
-    cursor.execute('SELECT COUNT(*) FROM users WHERE role = %s', ('admin',))
-    has_admin = cursor.fetchone()[0] > 0
-
-    if not has_admin:
-        admin_user = os.environ.get('ADMIN_USERNAME', 'admin')
-        admin_password = os.environ.get('ADMIN_PASSWORD', 'admin1234')
-        cursor.execute(
-            'INSERT INTO users (username, password, role) VALUES (%s, %s, %s)',
-            (admin_user, generate_password_hash(admin_password), 'admin'),
-        )
+    admin_user = os.environ.get('ADMIN_USERNAME', 'admin')
+    admin_password = os.environ.get('ADMIN_PASSWORD', 'admin1234')
+    cursor.execute(
+        '''
+        INSERT INTO users (username, password, role)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (username) DO NOTHING
+        ''',
+        (admin_user, generate_password_hash(admin_password), 'admin'),
+    )
 
     conn.commit()
     conn.close()

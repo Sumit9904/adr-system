@@ -1,186 +1,179 @@
-from openpyxl import Workbook
-from io import BytesIO
-from flask import Flask, render_template, request, redirect, url_for, session, flash, Response
+from flask import Flask, render_template, request, redirect, session, flash
 import psycopg2
-import os
-import csv
 from functools import wraps
+import os
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
 
+# Secret key
+app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev_fallback_key")
+
+# PostgreSQL connection (Render)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+# ---------- DATABASE CONNECTION ----------
+def get_db_connection():
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
 
-# ---------------- LOGIN REQUIRED DECORATOR ---------------- #
-def login_required(f):
+
+# ---------- ADMIN ACCESS CONTROL ----------
+def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if "user" not in session:
-            return redirect(url_for("login"))
+        if 'role' not in session or session['role'] != 'admin':
+            return "Access Denied"
         return f(*args, **kwargs)
     return decorated_function
 
 
-# ---------------- LOGIN ---------------- #
-@app.route("/login", methods=["GET", "POST"])
+# ---------- LOGIN ----------
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
 
-        if username == "admin" and password == "1234":
-            session["user"] = username
-            return redirect(url_for("home"))
+    if request.method == 'POST':
+
+        username = request.form['username']
+        password = request.form['password']
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            "SELECT id, username, password, role FROM users WHERE username=%s",
+            (username,)
+        )
+
+        user = cursor.fetchone()
+
+        conn.close()
+
+        if user and user[2] == password:
+            session['user_id'] = user[0]
+            session['username'] = user[1]
+            session['role'] = user[3]
+
+            flash("Login Successful", "success")
+
+            return redirect('/')
+
         else:
-            flash("Invalid Credentials!", "danger")
+            flash("Invalid Credentials", "danger")
 
     return render_template("login.html")
 
 
-@app.route("/logout")
+# ---------- LOGOUT ----------
+@app.route('/logout')
 def logout():
+
     session.clear()
-    return redirect(url_for("login"))
+
+    return redirect('/login')
 
 
-# ---------------- HOME WITH PAGINATION + SEARCH ---------------- #
-@app.route("/", methods=["GET", "POST"])
-@login_required
+# ---------- HOME ----------
+@app.route('/')
 def home():
-    page = request.args.get("page", 1, type=int)
-    per_page = 5
-    offset = (page - 1) * per_page
 
-    search = request.form.get("search", "")
+    if 'user_id' not in session:
+        return redirect('/login')
 
-    conn = get_connection()
-    cur = conn.cursor()
+    search_query = request.args.get('search')
 
-    if search:
-        cur.execute("""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    if search_query:
+        cursor.execute("""
             SELECT * FROM adr
-            WHERE name ILIKE %s OR drug ILIKE %s
-            ORDER BY id DESC
-            LIMIT %s OFFSET %s
-        """, (f"%{search}%", f"%{search}%", per_page, offset))
+            WHERE name ILIKE %s
+            OR drug ILIKE %s
+            OR severity ILIKE %s
+        """, (f"%{search_query}%", f"%{search_query}%", f"%{search_query}%"))
+
     else:
-        cur.execute("""
-            SELECT * FROM adr
-            ORDER BY id DESC
-            LIMIT %s OFFSET %s
-        """, (per_page, offset))
+        cursor.execute("SELECT * FROM adr ORDER BY id DESC")
 
-    data = cur.fetchall()
+    data = cursor.fetchall()
 
-    cur.execute("SELECT COUNT(*) FROM adr")
-    total = cur.fetchone()[0]
-    total_pages = (total // per_page) + (1 if total % per_page > 0 else 0)
-
-    cur.close()
     conn.close()
 
-    return render_template("index.html", adr=data, page=page, total_pages=total_pages)
+    return render_template("index.html", adr_list=data)
 
 
-# ---------------- ADD ---------------- #
-@app.route("/add", methods=["POST"])
-@login_required
+# ---------- ADD ADR ----------
+@app.route('/add', methods=['POST'])
 def add():
-    name = request.form["name"]
-    age = request.form["age"]
-    drug = request.form["drug"]
-    reaction = request.form["reaction"]
-    severity = request.form["severity"]
 
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("""
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    name = request.form['name']
+    age = request.form['age']
+    drug = request.form['drug']
+    reaction = request.form['reaction']
+    severity = request.form['severity']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
         INSERT INTO adr (name, age, drug, reaction, severity)
-        VALUES (%s, %s, %s, %s, %s)
+        VALUES (%s,%s,%s,%s,%s)
     """, (name, age, drug, reaction, severity))
 
     conn.commit()
-    cur.close()
     conn.close()
 
-    flash("ADR Added Successfully!", "success")
-    return redirect(url_for("home"))
+    flash("ADR Report Added", "success")
+
+    return redirect('/')
 
 
-# ---------------- DELETE ---------------- #
-@app.route("/delete/<int:id>")
-@login_required
+# ---------- DELETE ADR ----------
+@app.route('/delete/<int:id>')
 def delete(id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM adr WHERE id=%s", (id,))
+
+    if 'user_id' not in session:
+        return redirect('/login')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM adr WHERE id=%s", (id,))
+
     conn.commit()
-    cur.close()
     conn.close()
 
-    flash("Record Deleted!", "warning")
-    return redirect(url_for("home"))
+    flash("Record Deleted", "warning")
+
+    return redirect('/')
 
 
-# ---------------- EXPORT CSV ---------------- #
-@app.route("/export")
-@login_required
-def export():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM adr ORDER BY id DESC")
-    data = cur.fetchall()
-    cur.close()
-    conn.close()
+# ---------- ADMIN DASHBOARD ----------
+@app.route('/admin')
+@admin_required
+def admin_panel():
 
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "ADR Data"
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    headers = ["ID", "Name", "Age", "Drug", "Reaction", "Severity"]
-    ws.append(headers)
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
 
-    for row in data:
-        ws.append(row)
+    cursor.execute("SELECT COUNT(*) FROM adr")
+    total_reports = cursor.fetchone()[0]
 
-    file_stream = BytesIO()
-    wb.save(file_stream)
-    file_stream.seek(0)
-
-    return Response(
-        file_stream,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=adr_data.xlsx"}
-    )
-# ---------------- DASHBOARD ---------------- #
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT COUNT(*) FROM adr")
-    total = cur.fetchone()[0]
-
-    cur.execute("SELECT severity, COUNT(*) FROM adr GROUP BY severity")
-    severity_data = cur.fetchall()
-
-    labels = [row[0] for row in severity_data]
-    values = [row[1] for row in severity_data]
-
-    cur.close()
     conn.close()
 
     return render_template(
-        "dashboard.html",
-        total=total,
-        labels=labels,
-        values=values
+        "admin.html",
+        users=total_users,
+        reports=total_reports
     )
 
 
+# ---------- RUN ----------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

@@ -9,7 +9,8 @@ from openpyxl import Workbook
 
 app = Flask(__name__)
 
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24))
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-me')
+app.secret_key = app.config['SECRET_KEY']
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
@@ -75,6 +76,11 @@ def login_required(f):
         if 'user_id' not in session:
             flash('Please log in to continue.', 'warning')
             return redirect(url_for('login'))
+
+        if not ensure_session_identity():
+            flash('Your session has expired. Please log in again.', 'warning')
+            return redirect(url_for('login'))
+
         return f(*args, **kwargs)
 
     return decorated_function
@@ -83,7 +89,7 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if session.get('role') != 'admin':
+        if session.get('role', '') != 'admin':
             flash('Admin access required.', 'danger')
             return redirect(url_for('home'))
         return f(*args, **kwargs)
@@ -112,6 +118,31 @@ def fetch_summary_metrics(cursor):
     }
 
 
+def ensure_session_identity():
+    user_id = session.get('user_id')
+    if not user_id:
+        return False
+
+    username = session.get('username')
+    role = session.get('role')
+    if username and role:
+        return True
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT username, role FROM users WHERE id = %s', (user_id,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        session.clear()
+        return False
+
+    session['username'] = user[0]
+    session['role'] = user[1]
+    return True
+
+
 @app.before_request
 def startup():
     if not getattr(app, '_db_initialized', False):
@@ -125,8 +156,12 @@ def login():
         return redirect(url_for('home'))
 
     if request.method == 'POST':
-        username = request.form['username'].strip()
-        password = request.form['password']
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+
+        if not username or not password:
+            flash('Username and password are required.', 'warning')
+            return render_template('login.html')
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -155,7 +190,7 @@ def login():
                 session['role'] = user[3]
                 flash('Login successful.', 'success')
                 conn.close()
-                return redirect(url_for('home'))
+                return redirect(url_for('dashboard_redirect'))
 
         conn.close()
         flash('Invalid username or password.', 'danger')
@@ -269,9 +304,13 @@ def admin_panel():
 
 
 @app.route('/dashboard')
-@admin_required
+@login_required
 def dashboard_redirect():
-    return redirect(url_for('admin_panel'))
+    if session.get('role', '') == 'admin':
+        return redirect(url_for('admin_panel'))
+
+    flash('Welcome back.', 'info')
+    return redirect(url_for('home'))
 
 
 @app.route('/users', methods=['GET', 'POST'])

@@ -171,11 +171,15 @@ def get_dashboard_metrics(cursor):
     cursor.execute('SELECT COUNT(*) FROM users')
     total_users = cursor.fetchone()[0]
 
+    cursor.execute("SELECT COUNT(DISTINCT LOWER(TRIM(drug))) FROM adr WHERE TRIM(COALESCE(drug, '')) <> ''")
+    total_drugs = cursor.fetchone()[0]
+
     return {
         'total_reports': total_reports,
         'todays_reports': todays_reports,
         'severe_cases': severe_cases,
         'total_users': total_users,
+        'total_drugs': total_drugs,
     }
 
 
@@ -327,15 +331,15 @@ def logout():
 
 
 @app.route('/')
-@login_required
 def home():
-    return redirect(url_for('dashboard'))
+    if session.get('user_id'):
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    print("Loading dashboard")
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -366,13 +370,57 @@ def dashboard():
         )
     except psycopg2.Error:
         flash('Unable to load dashboard right now.', 'danger')
-        return render_template('dashboard.html', metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0}, severity_labels=[], severity_values=[], drug_labels=[], drug_values=[], activity_logs=[])
+        return render_template(
+            'dashboard.html',
+            metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0, 'total_drugs': 0},
+            severity_labels=[],
+            severity_values=[],
+            drug_labels=[],
+            drug_values=[],
+            activity_logs=[],
+        )
 
 
 @app.route('/reports')
 @login_required
 def reports():
-    return redirect(url_for('dashboard'))
+    filters = get_report_filters()
+    default_context = {
+        'adr_list': [],
+        'filters': filters,
+        'severity_options': ['Mild', 'Moderate', 'Severe'],
+    }
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        adr_list = fetch_reports_with_filters(cursor, filters)
+        cursor.execute(
+            '''
+            SELECT DISTINCT severity
+            FROM adr
+            WHERE TRIM(COALESCE(severity, '')) <> ''
+            ORDER BY severity ASC
+            '''
+        )
+        dynamic_options = [row[0] for row in cursor.fetchall()]
+        conn.close()
+
+        merged_options = []
+        for value in dynamic_options + default_context['severity_options']:
+            if value and value not in merged_options:
+                merged_options.append(value)
+
+        return render_template(
+            'index.html',
+            adr_list=adr_list,
+            filters=filters,
+            severity_options=merged_options,
+        )
+    except psycopg2.Error:
+        flash('Unable to load ADR reports right now.', 'danger')
+        return render_template('index.html', **default_context)
 
 
 @app.route('/add', methods=['POST'])
@@ -389,6 +437,14 @@ def add():
         return redirect(url_for('reports'))
 
     try:
+        age_value = int(age)
+        if age_value < 0:
+            raise ValueError
+    except ValueError:
+        flash('Age must be a valid non-negative number.', 'warning')
+        return redirect(url_for('reports'))
+
+    try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -396,7 +452,7 @@ def add():
             INSERT INTO adr (name, age, drug, reaction, severity)
             VALUES (%s, %s, %s, %s, %s)
             ''',
-            (name, age, drug, reaction, severity),
+            (name, age_value, drug, reaction, severity),
         )
         conn.commit()
         conn.close()
@@ -422,13 +478,25 @@ def edit_report(adr_id):
             reaction = request.form.get('reaction', '').strip()
             severity = request.form.get('severity', '').strip()
 
+            if not all([name, age, drug, reaction, severity]):
+                flash('All ADR fields are required.', 'warning')
+                return redirect(url_for('edit_report', adr_id=adr_id))
+
+            try:
+                age_value = int(age)
+                if age_value < 0:
+                    raise ValueError
+            except ValueError:
+                flash('Age must be a valid non-negative number.', 'warning')
+                return redirect(url_for('edit_report', adr_id=adr_id))
+
             cursor.execute(
                 '''
                 UPDATE adr
                 SET name = %s, age = %s, drug = %s, reaction = %s, severity = %s
                 WHERE id = %s
                 ''',
-                (name, age, drug, reaction, severity, adr_id),
+                (name, age_value, drug, reaction, severity, adr_id),
             )
             conn.commit()
             conn.close()
@@ -501,7 +569,15 @@ def admin_panel():
         )
     except psycopg2.Error:
         flash('Unable to load admin panel.', 'danger')
-        return render_template('admin.html', metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0}, users=[], severity_labels=[], severity_values=[], drug_labels=[], drug_values=[])
+        return render_template(
+            'admin.html',
+            metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0, 'total_drugs': 0},
+            users=[],
+            severity_labels=[],
+            severity_values=[],
+            drug_labels=[],
+            drug_values=[],
+        )
 
 
 @app.route('/users', methods=['GET', 'POST'])

@@ -3,49 +3,5 @@
 {% block page_title %}User Management{% endblock %}
 
 {% block content %}
-<div class="row g-4">
-    <div class="col-lg-4">
-        <div class="card stat-card">
-            <div class="card-body">
-                <h5>Create User</h5>
-                <form method="POST" action="{{ url_for('manage_users') }}">
-                    <input class="form-control mb-2" name="username" placeholder="Username" required>
-                    <input type="password" class="form-control mb-2" name="password" placeholder="Password" minlength="8" required>
-                    <select class="form-select mb-3" name="role">
-                        <option value="viewer">Viewer</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                    <button class="btn btn-primary w-100">Create</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-8">
-        <div class="table-wrap p-3">
-            <h5>Existing Users</h5>
-            <table class="table table-hover align-middle mb-0">
-                <thead class="table-light">
-                    <tr><th>ID</th><th>Username</th><th>Role</th><th></th></tr>
-                </thead>
-                <tbody>
-                {% for user in users %}
-                    <tr>
-                        <td>{{ user[0] }}</td>
-                        <td>{{ user[1] }}</td>
-                        <td><span class="badge {% if user[2] == 'admin' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ user[2] }}</span></td>
-                        <td class="text-end">
-                            {% if user[0] != session.get('user_id') %}
-                            <form method="POST" action="{{ url_for('delete_user', user_id=user[0]) }}" class="d-inline">
-                                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete user {{ user[1] }}?')">Delete</button>
-                            </form>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</div>
+<div class="alert alert-info">User management has moved to the <a href="{{ url_for('admin_panel') }}">Admin Panel</a>.</div>
 {% endblock %}

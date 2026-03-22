@@ -1,22 +1,40 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Edit ADR</title>
-</head>
-<body>
-    <h2>Edit ADR Record</h2>
+{% extends "base.html" %}
+{% block title %}Edit ADR{% endblock %}
+{% block page_title %}Edit ADR Report{% endblock %}
 
-    <form action="/update/{{ adr[0] }}" method="POST">
-        Name: <input type="text" name="name" value="{{ adr[1] }}" required><br><br>
-        Age: <input type="number" name="age" value="{{ adr[2] }}" required><br><br>
-        Drug: <input type="text" name="drug" value="{{ adr[3] }}" required><br><br>
-        Reaction: <input type="text" name="reaction" value="{{ adr[4] }}" required><br><br>
-        Severity: <input type="text" name="severity" value="{{ adr[5] }}" required><br><br>
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-7">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h5 class="mb-3">Update Report #{{ adr[0] }}</h5>
+                <form action="{{ url_for('edit_report', adr_id=adr[0]) }}" method="POST">
+                    <label class="form-label">Patient Name</label>
+                    <input class="form-control mb-2" type="text" name="name" value="{{ adr[1] }}" required>
 
-        <button type="submit">Update</button>
-    </form>
+                    <label class="form-label">Age</label>
+                    <input class="form-control mb-2" type="number" min="0" name="age" value="{{ adr[2] }}" required>
 
-    <br>
-    <a href="/">Back</a>
-</body>
-</html>
+                    <label class="form-label">Drug</label>
+                    <input class="form-control mb-2" type="text" name="drug" value="{{ adr[3] }}" required>
+
+                    <label class="form-label">Reaction</label>
+                    <textarea class="form-control mb-2" name="reaction" rows="3" required>{{ adr[4] }}</textarea>
+
+                    <label class="form-label">Severity</label>
+                    <select class="form-select mb-3" name="severity" required>
+                        <option value="Mild" {% if adr[5] == 'Mild' %}selected{% endif %}>Mild</option>
+                        <option value="Moderate" {% if adr[5] == 'Moderate' %}selected{% endif %}>Moderate</option>
+                        <option value="Severe" {% if adr[5] == 'Severe' %}selected{% endif %}>Severe</option>
+                    </select>
+
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-primary">Update Report</button>
+                        <a href="{{ url_for('reports') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

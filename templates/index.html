@@ -1,26 +1,11 @@
 {% extends "base.html" %}
 
 {% block title %}ADR Reports{% endblock %}
-{% block page_title %}ADR Reports{% endblock %}
+{% block page_title %}ADR Reports Management{% endblock %}
 
 {% block content %}
-<div class="row g-3 mb-4">
-    <div class="col-md-3">
-        <div class="card stat-card p-3"><small class="text-muted">Total Reports</small><h4 class="mb-0">{{ metrics.total_reports }}</h4></div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card p-3"><small class="text-muted">Severe Cases</small><h4 class="mb-0 text-danger">{{ metrics.severe_cases }}</h4></div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card p-3"><small class="text-muted">Tracked Drugs</small><h4 class="mb-0">{{ metrics.unique_drugs }}</h4></div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card p-3"><small class="text-muted">Registered Users</small><h4 class="mb-0">{{ metrics.total_users }}</h4></div>
-    </div>
-</div>
-
 <div class="row g-4">
-    <div class="col-lg-4">
+    <div class="col-xl-4">
         <div class="card stat-card">
             <div class="card-body">
                 <h5 class="card-title">Add ADR Report</h5>
@@ -34,26 +19,42 @@
                         <option value="Moderate">Moderate</option>
                         <option value="Severe">Severe</option>
                     </select>
-                    <button class="btn btn-primary w-100">Submit</button>
+                    <button class="btn btn-primary w-100">Submit Report</button>
                 </form>
             </div>
         </div>
     </div>
 
-    <div class="col-lg-8">
-        <div class="table-wrap p-3">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">ADR Records</h5>
-                <form method="GET" class="d-flex" action="{{ url_for('home') }}">
-                    <input class="form-control me-2" name="search" value="{{ search_query }}" placeholder="Search name/drug/severity">
-                    <button class="btn btn-outline-primary">Search</button>
-                </form>
+    <div class="col-xl-8">
+        <div class="panel-wrap p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">Filter ADR Records</h5>
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('export_adr_csv', **filters) }}">Export Current Filter (CSV)</a>
             </div>
+            <form method="GET" class="row g-2 mb-3" action="{{ url_for('reports') }}">
+                <div class="col-md-4"><input class="form-control" name="search" value="{{ filters.search }}" placeholder="Search name/reaction"></div>
+                <div class="col-md-3"><input class="form-control" name="drug" value="{{ filters.drug }}" placeholder="Drug"></div>
+                <div class="col-md-2">
+                    <select class="form-select" name="severity">
+                        <option value="">All severity</option>
+                        {% for severity in severity_options %}
+                            <option value="{{ severity }}" {% if filters.severity == severity %}selected{% endif %}>{{ severity }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3"><input class="form-control" type="date" name="date_from" value="{{ filters.date_from }}"></div>
+                <div class="col-md-3"><input class="form-control" type="date" name="date_to" value="{{ filters.date_to }}"></div>
+                <div class="col-md-6 d-flex gap-2">
+                    <button class="btn btn-outline-primary">Apply Filter</button>
+                    <a class="btn btn-outline-secondary" href="{{ url_for('reports') }}">Reset</a>
+                </div>
+            </form>
+
             <div class="table-responsive">
                 <table class="table align-middle table-hover">
                     <thead class="table-light">
                         <tr>
-                            <th>ID</th><th>Name</th><th>Age</th><th>Drug</th><th>Reaction</th><th>Severity</th><th>Date</th><th></th>
+                            <th>ID</th><th>Name</th><th>Age</th><th>Drug</th><th>Reaction</th><th>Severity</th><th>Date</th><th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -66,10 +67,15 @@
                             <td>{{ adr[4] }}</td>
                             <td><span class="badge {% if adr[5] == 'Severe' %}text-bg-danger{% elif adr[5] == 'Moderate' %}text-bg-warning{% else %}text-bg-success{% endif %}">{{ adr[5] }}</span></td>
                             <td>{{ adr[6].strftime('%Y-%m-%d') if adr[6] else '-' }}</td>
-                            <td><a class="btn btn-sm btn-outline-danger" href="{{ url_for('delete', adr_id=adr[0]) }}" onclick="return confirm('Delete this record?');">Delete</a></td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('edit_report', adr_id=adr[0]) }}">Edit</a>
+                                <form method="POST" action="{{ url_for('delete_report', adr_id=adr[0]) }}" class="d-inline">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this record?');">Delete</button>
+                                </form>
+                            </td>
                         </tr>
                     {% else %}
-                        <tr><td colspan="8" class="text-center text-muted py-4">No ADR reports found.</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted py-4">No ADR reports found for current filter.</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>

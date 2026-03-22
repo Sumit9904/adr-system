@@ -1,6 +1,83 @@
 {% extends "base.html" %}
-{% block title %}Analytics{% endblock %}
-{% block page_title %}Analytics{% endblock %}
+{% block title %}Dashboard Analytics{% endblock %}
+{% block page_title %}Dashboard Analytics{% endblock %}
+
 {% block content %}
-<div class="alert alert-info">Analytics has moved to the <a href="{{ url_for('admin_panel') }}">Admin Dashboard</a>.</div>
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Total Reports</small><h4 class="mb-0">{{ metrics.total_reports }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Today's Reports</small><h4 class="mb-0 text-primary">{{ metrics.todays_reports }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Severe Cases</small><h4 class="mb-0 text-danger">{{ metrics.severe_cases }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Total Users</small><h4 class="mb-0">{{ metrics.total_users }}</h4></div></div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card stat-card p-3">
+            <h6 class="mb-3">ADR Count by Severity</h6>
+            <canvas id="severityChart" height="230"></canvas>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card stat-card p-3">
+            <h6 class="mb-3">ADR Count by Drug (Top 10)</h6>
+            <canvas id="drugChart" height="230"></canvas>
+        </div>
+    </div>
+</div>
+
+<div class="panel-wrap p-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0">Recent Activity Logs</h6>
+        <small class="text-muted">Tracks login, report changes, and admin actions</small>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+            <tbody>
+            {% for log in activity_logs %}
+                <tr>
+                    <td>{{ log[2].strftime('%Y-%m-%d %H:%M') if log[2] else '-' }}</td>
+                    <td>{{ log[3] }}</td>
+                    <td><span class="badge text-bg-secondary">{{ log[0] }}</span></td>
+                    <td>{{ log[1] }}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="4" class="text-center text-muted py-3">No activity yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+new Chart(document.getElementById('severityChart'), {
+    type: 'pie',
+    data: {
+        labels: {{ severity_labels|tojson }},
+        datasets: [{
+            data: {{ severity_values|tojson }},
+            backgroundColor: ['#198754', '#ffc107', '#dc3545', '#0d6efd', '#6f42c1']
+        }]
+    }
+});
+
+new Chart(document.getElementById('drugChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ drug_labels|tojson }},
+        datasets: [{
+            label: 'ADR Reports',
+            data: {{ drug_values|tojson }},
+            backgroundColor: '#0d6efd'
+        }]
+    },
+    options: {
+        scales: { y: { beginAtZero: true } },
+        plugins: { legend: { display: false } }
+    }
+});
+</script>
 {% endblock %}

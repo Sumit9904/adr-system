@@ -11,11 +11,13 @@ app = Flask(__name__)
 
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-me')
 app.secret_key = app.config['SECRET_KEY']
+app.config['TEMPLATES_AUTO_RELOAD'] = True
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_SECURE=os.environ.get('FLASK_ENV') == 'production',
 )
+app.jinja_env.auto_reload = True
 
 DATABASE_URL = os.environ.get('DATABASE_URL')
 ALLOWED_ROLES = {'admin', 'user'}
@@ -333,6 +335,7 @@ def home():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    print("Loading dashboard")
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -369,29 +372,7 @@ def dashboard():
 @app.route('/reports')
 @login_required
 def reports():
-    filters = get_report_filters()
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        adr_list = fetch_reports_with_filters(cursor, filters)
-        metrics = get_dashboard_metrics(cursor)
-
-        cursor.execute('SELECT DISTINCT severity FROM adr ORDER BY severity ASC')
-        severity_options = [row[0] for row in cursor.fetchall()]
-
-        conn.close()
-        return render_template(
-            'index.html',
-            adr_list=adr_list,
-            metrics=metrics,
-            filters=filters,
-            severity_options=severity_options,
-        )
-    except psycopg2.Error:
-        flash('Unable to fetch reports.', 'danger')
-        return render_template('index.html', adr_list=[], metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0}, filters=filters, severity_options=[])
+    return redirect(url_for('dashboard'))
 
 
 @app.route('/add', methods=['POST'])

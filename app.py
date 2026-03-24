@@ -3,6 +3,8 @@ import psycopg2
 from functools import wraps
 import os
 import csv
+import secrets
+import string
 from io import StringIO, BytesIO
 from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -191,6 +193,19 @@ def dashboard_redirect_for_role():
     return redirect(url_for('admin_dashboard' if session.get('role') == 'admin' else 'user_dashboard'))
 
 
+def generate_random_password(length=12):
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+def generate_unique_username(cursor, base='user'):
+    while True:
+        candidate = f"{base}_{secrets.randbelow(900000) + 100000}"
+        cursor.execute('SELECT 1 FROM users WHERE username = %s', (candidate,))
+        if not cursor.fetchone():
+            return candidate
+
+
 def get_dashboard_metrics(cursor, user_id=None):
     filter_sql = ''
     params = []
@@ -340,10 +355,8 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
-        selected_role = request.form.get('role', '').strip().lower()
-
-        if not username or not password or selected_role not in ALLOWED_ROLES:
-            flash('Username, password, and role are required.', 'warning')
+        if not username or not password:
+            flash('Username and password are required.', 'warning')
             return render_template('login.html')
 
         try:
@@ -367,18 +380,18 @@ def login():
                     )
                     conn.commit()
 
-                if valid and user[3] == selected_role:
+                if valid:
                     session.clear()
                     session['user_id'] = user[0]
                     session['username'] = user[1]
                     session['role'] = user[3]
                     conn.close()
-                    log_activity('LOGIN', f'User {user[1]} logged in as {user[3]}')
+                    log_activity('LOGIN', f'User {user[1]} logged in')
                     flash('Login successful.', 'success')
                     return dashboard_redirect_for_role()
 
             conn.close()
-            flash('Invalid username/password or selected role.', 'danger')
+            flash('Invalid username or password.', 'danger')
         except psycopg2.Error:
             flash('Unable to authenticate at this time.', 'danger')
 
@@ -653,31 +666,48 @@ def delete_report(adr_id):
 @admin_required
 def create_user():
     username = request.form.get('username', '').strip()
-    password = request.form.get('password', '')
-    role = request.form.get('role', 'user').strip().lower()
-
-    if not username or not password:
-        flash('Username and password are required.', 'warning')
-        return redirect(url_for('admin_dashboard'))
-
-    if role not in ALLOWED_ROLES:
-        flash('Invalid role selected.', 'warning')
-        return redirect(url_for('admin_dashboard'))
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+        if not username:
+            username = generate_unique_username(cursor)
+        password = generate_random_password()
         cursor.execute(
             'INSERT INTO users (username, password, role) VALUES (%s, %s, %s)',
-            (username, generate_password_hash(password), role),
+            (username, generate_password_hash(password), 'user'),
         )
         conn.commit()
         conn.close()
-        log_activity('CREATE_USER', f'Created user {username} with role {role}')
-        flash('User created successfully.', 'success')
+        log_activity('CREATE_USER', f'Created user {username} with role user')
+        flash(f'User created: {username} | Temporary password: {password}', 'success')
     except psycopg2.Error:
         flash('Unable to create user. Username may already exist.', 'danger')
 
+    return redirect(url_for('admin_dashboard'))
+
+
+@app.route('/users/reset-password/<int:user_id>', methods=['POST'])
+@admin_required
+def reset_user_password(user_id):
+    new_password = generate_random_password()
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE users SET password = %s WHERE id = %s',
+            (generate_password_hash(new_password), user_id),
+        )
+        updated = cursor.rowcount
+        conn.commit()
+        conn.close()
+        if updated:
+            log_activity('RESET_PASSWORD', f'Reset password for user #{user_id}')
+            flash(f'Password reset successfully. New temporary password: {new_password}', 'success')
+        else:
+            flash('User not found.', 'warning')
+    except psycopg2.Error:
+        flash('Unable to reset password.', 'danger')
     return redirect(url_for('admin_dashboard'))
 
 

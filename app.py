@@ -48,6 +48,7 @@ def init_db():
         '''
         CREATE TABLE IF NOT EXISTS adr (
             id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
             name VARCHAR(120) NOT NULL,
             age INTEGER NOT NULL,
             drug VARCHAR(120) NOT NULL,
@@ -55,6 +56,23 @@ def init_db():
             severity VARCHAR(50) NOT NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
+        '''
+    )
+
+    cursor.execute('ALTER TABLE adr ADD COLUMN IF NOT EXISTS user_id INTEGER')
+    cursor.execute(
+        '''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'adr_user_id_fkey'
+            ) THEN
+                ALTER TABLE adr
+                ADD CONSTRAINT adr_user_id_fkey
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+            END IF;
+        END $$;
         '''
     )
 
@@ -121,8 +139,19 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if session.get('role', '') != 'admin':
+        if session.get('role') != 'admin':
             flash('Admin access required.', 'danger')
+            return redirect(url_for('dashboard'))
+        return f(*args, **kwargs)
+
+    return login_required(decorated_function)
+
+
+def user_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if session.get('role') != 'user':
+            flash('User access required.', 'danger')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
 
@@ -158,20 +187,37 @@ def ensure_session_identity():
         return False
 
 
-def get_dashboard_metrics(cursor):
-    cursor.execute('SELECT COUNT(*) FROM adr')
+def dashboard_redirect_for_role():
+    return redirect(url_for('admin_dashboard' if session.get('role') == 'admin' else 'user_dashboard'))
+
+
+def get_dashboard_metrics(cursor, user_id=None):
+    filter_sql = ''
+    params = []
+    if user_id:
+        filter_sql = ' WHERE user_id = %s'
+        params = [user_id]
+
+    cursor.execute(f'SELECT COUNT(*) FROM adr{filter_sql}', tuple(params))
     total_reports = cursor.fetchone()[0]
 
-    cursor.execute('SELECT COUNT(*) FROM adr WHERE DATE(created_at) = CURRENT_DATE')
+    date_filter = f"{filter_sql} {'AND' if filter_sql else 'WHERE'} DATE(created_at) = CURRENT_DATE"
+    cursor.execute(f'SELECT COUNT(*) FROM adr{date_filter}', tuple(params))
     todays_reports = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM adr WHERE LOWER(severity) = 'severe'")
+    severe_filter = f"{filter_sql} {'AND' if filter_sql else 'WHERE'} LOWER(severity) = 'severe'"
+    cursor.execute(f'SELECT COUNT(*) FROM adr{severe_filter}', tuple(params))
     severe_cases = cursor.fetchone()[0]
 
     cursor.execute('SELECT COUNT(*) FROM users')
     total_users = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(DISTINCT LOWER(TRIM(drug))) FROM adr WHERE TRIM(COALESCE(drug, '')) <> ''")
+    cursor.execute(
+        f"SELECT COUNT(DISTINCT LOWER(TRIM(drug))) FROM adr{filter_sql} "
+        "AND TRIM(COALESCE(drug, '')) <> ''" if filter_sql else
+        "SELECT COUNT(DISTINCT LOWER(TRIM(drug))) FROM adr WHERE TRIM(COALESCE(drug, '')) <> ''",
+        tuple(params),
+    )
     total_drugs = cursor.fetchone()[0]
 
     return {
@@ -183,25 +229,35 @@ def get_dashboard_metrics(cursor):
     }
 
 
-def get_chart_data(cursor):
+def get_chart_data(cursor, user_id=None):
+    params = []
+    where = ''
+    if user_id:
+        where = 'WHERE user_id = %s'
+        params = [user_id]
+
     cursor.execute(
-        '''
+        f'''
         SELECT COALESCE(severity, 'Unknown') AS label, COUNT(*) AS count
         FROM adr
+        {where}
         GROUP BY label
         ORDER BY count DESC
-        '''
+        ''',
+        tuple(params),
     )
     severity_data = cursor.fetchall()
 
     cursor.execute(
-        '''
+        f'''
         SELECT COALESCE(drug, 'Unknown') AS label, COUNT(*) AS count
         FROM adr
+        {where}
         GROUP BY label
         ORDER BY count DESC
         LIMIT 10
-        '''
+        ''',
+        tuple(params),
     )
     drug_data = cursor.fetchall()
 
@@ -223,42 +279,50 @@ def get_report_filters():
     }
 
 
-def fetch_reports_with_filters(cursor, filters):
+def fetch_reports_with_filters(cursor, filters, user_id=None):
     query = '''
-        SELECT id, name, age, drug, reaction, severity, created_at
-        FROM adr
+        SELECT a.id, a.name, a.age, a.drug, a.reaction, a.severity, a.created_at, COALESCE(u.username, 'Unknown')
+        FROM adr a
+        LEFT JOIN users u ON u.id = a.user_id
         WHERE 1=1
     '''
     params = []
 
+    if user_id:
+        query += ' AND a.user_id = %s'
+        params.append(user_id)
+
     if filters['search']:
-        query += ' AND (name ILIKE %s OR drug ILIKE %s OR reaction ILIKE %s OR severity ILIKE %s)'
-        params.extend([
-            f"%{filters['search']}%",
-            f"%{filters['search']}%",
-            f"%{filters['search']}%",
-            f"%{filters['search']}%",
-        ])
+        query += ' AND (a.name ILIKE %s OR a.drug ILIKE %s OR a.reaction ILIKE %s OR a.severity ILIKE %s)'
+        params.extend([f"%{filters['search']}%"] * 4)
 
     if filters['drug']:
-        query += ' AND drug ILIKE %s'
+        query += ' AND a.drug ILIKE %s'
         params.append(f"%{filters['drug']}%")
 
     if filters['severity']:
-        query += ' AND severity = %s'
+        query += ' AND a.severity = %s'
         params.append(filters['severity'])
 
     if filters['date_from']:
-        query += ' AND DATE(created_at) >= %s'
+        query += ' AND DATE(a.created_at) >= %s'
         params.append(filters['date_from'])
 
     if filters['date_to']:
-        query += ' AND DATE(created_at) <= %s'
+        query += ' AND DATE(a.created_at) <= %s'
         params.append(filters['date_to'])
 
-    query += ' ORDER BY created_at DESC, id DESC'
+    query += ' ORDER BY a.created_at DESC, a.id DESC'
     cursor.execute(query, tuple(params))
     return cursor.fetchall()
+
+
+def can_access_report(cursor, adr_id, user_id, role):
+    if role == 'admin':
+        cursor.execute('SELECT 1 FROM adr WHERE id = %s', (adr_id,))
+    else:
+        cursor.execute('SELECT 1 FROM adr WHERE id = %s AND user_id = %s', (adr_id, user_id))
+    return cursor.fetchone() is not None
 
 
 @app.before_request
@@ -271,14 +335,15 @@ def startup():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if session.get('user_id'):
-        return redirect(url_for('dashboard'))
+        return dashboard_redirect_for_role()
 
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '')
+        selected_role = request.form.get('role', '').strip().lower()
 
-        if not username or not password:
-            flash('Username and password are required.', 'warning')
+        if not username or not password or selected_role not in ALLOWED_ROLES:
+            flash('Username, password, and role are required.', 'warning')
             return render_template('login.html')
 
         try:
@@ -302,18 +367,18 @@ def login():
                     )
                     conn.commit()
 
-                if valid:
+                if valid and user[3] == selected_role:
                     session.clear()
                     session['user_id'] = user[0]
                     session['username'] = user[1]
                     session['role'] = user[3]
                     conn.close()
-                    log_activity('LOGIN', f'User {user[1]} logged in')
+                    log_activity('LOGIN', f'User {user[1]} logged in as {user[3]}')
                     flash('Login successful.', 'success')
-                    return redirect(url_for('dashboard'))
+                    return dashboard_redirect_for_role()
 
             conn.close()
-            flash('Invalid username or password.', 'danger')
+            flash('Invalid username/password or selected role.', 'danger')
         except psycopg2.Error:
             flash('Unable to authenticate at this time.', 'danger')
 
@@ -333,94 +398,112 @@ def logout():
 @app.route('/')
 def home():
     if session.get('user_id'):
-        return redirect(url_for('dashboard'))
+        return dashboard_redirect_for_role()
     return redirect(url_for('login'))
 
 
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    return dashboard_redirect_for_role()
+
+
+@app.route('/admin')
+@admin_required
+def admin_dashboard():
+    filters = get_report_filters()
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
         metrics = get_dashboard_metrics(cursor)
         chart_data = get_chart_data(cursor)
+        adr_list = fetch_reports_with_filters(cursor, filters)
+
+        cursor.execute('SELECT id, username, role FROM users ORDER BY id ASC')
+        users = cursor.fetchall()
 
         cursor.execute(
-            '''
-            SELECT a.action, a.details, a.created_at, COALESCE(u.username, 'System')
-            FROM activity_logs a
-            LEFT JOIN users u ON u.id = a.user_id
-            ORDER BY a.created_at DESC
-            LIMIT 10
-            '''
+            "SELECT DISTINCT severity FROM adr WHERE TRIM(COALESCE(severity, '')) <> '' ORDER BY severity ASC"
         )
-        activity_logs = cursor.fetchall()
+        severity_options = [row[0] for row in cursor.fetchall()]
 
         conn.close()
+
         return render_template(
-            'dashboard.html',
+            'admin_dashboard.html',
             metrics=metrics,
+            users=users,
+            adr_list=adr_list,
+            filters=filters,
+            severity_options=severity_options,
             severity_labels=chart_data['severity_labels'],
             severity_values=chart_data['severity_values'],
             drug_labels=chart_data['drug_labels'],
             drug_values=chart_data['drug_values'],
-            activity_logs=activity_logs,
         )
     except psycopg2.Error:
-        flash('Unable to load dashboard right now.', 'danger')
+        flash('Unable to load admin dashboard.', 'danger')
         return render_template(
-            'dashboard.html',
+            'admin_dashboard.html',
             metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0, 'total_drugs': 0},
+            users=[],
+            adr_list=[],
+            filters=filters,
+            severity_options=['Mild', 'Moderate', 'Severe'],
             severity_labels=[],
             severity_values=[],
             drug_labels=[],
             drug_values=[],
-            activity_logs=[],
         )
 
 
-@app.route('/reports')
-@login_required
-def reports():
+@app.route('/user')
+@user_required
+def user_dashboard():
     filters = get_report_filters()
-    default_context = {
-        'adr_list': [],
-        'filters': filters,
-        'severity_options': ['Mild', 'Moderate', 'Severe'],
-    }
+    user_id = session.get('user_id')
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        adr_list = fetch_reports_with_filters(cursor, filters)
+        metrics = get_dashboard_metrics(cursor, user_id=user_id)
+        chart_data = get_chart_data(cursor, user_id=user_id)
+        adr_list = fetch_reports_with_filters(cursor, filters, user_id=user_id)
+
         cursor.execute(
-            '''
-            SELECT DISTINCT severity
-            FROM adr
-            WHERE TRIM(COALESCE(severity, '')) <> ''
-            ORDER BY severity ASC
-            '''
+            "SELECT DISTINCT severity FROM adr WHERE user_id = %s AND TRIM(COALESCE(severity, '')) <> '' ORDER BY severity ASC",
+            (user_id,),
         )
-        dynamic_options = [row[0] for row in cursor.fetchall()]
+        severity_options = [row[0] for row in cursor.fetchall()]
+
         conn.close()
 
-        merged_options = []
-        for value in dynamic_options + default_context['severity_options']:
-            if value and value not in merged_options:
-                merged_options.append(value)
-
         return render_template(
-            'index.html',
+            'user_dashboard.html',
+            metrics=metrics,
             adr_list=adr_list,
             filters=filters,
-            severity_options=merged_options,
+            severity_options=severity_options,
+            severity_labels=chart_data['severity_labels'],
+            severity_values=chart_data['severity_values'],
+            drug_labels=chart_data['drug_labels'],
+            drug_values=chart_data['drug_values'],
         )
     except psycopg2.Error:
-        flash('Unable to load ADR reports right now.', 'danger')
-        return render_template('index.html', **default_context)
+        flash('Unable to load user dashboard.', 'danger')
+        return render_template(
+            'user_dashboard.html',
+            metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0, 'total_drugs': 0},
+            adr_list=[],
+            filters=filters,
+            severity_options=['Mild', 'Moderate', 'Severe'],
+            severity_labels=[],
+            severity_values=[],
+            drug_labels=[],
+            drug_values=[],
+        )
 
 
 @app.route('/add', methods=['POST'])
@@ -434,7 +517,7 @@ def add():
 
     if not all([name, age, drug, reaction, severity]):
         flash('All ADR fields are required.', 'warning')
-        return redirect(url_for('reports'))
+        return dashboard_redirect_for_role()
 
     try:
         age_value = int(age)
@@ -442,17 +525,17 @@ def add():
             raise ValueError
     except ValueError:
         flash('Age must be a valid non-negative number.', 'warning')
-        return redirect(url_for('reports'))
+        return dashboard_redirect_for_role()
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
             '''
-            INSERT INTO adr (name, age, drug, reaction, severity)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO adr (user_id, name, age, drug, reaction, severity)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ''',
-            (name, age_value, drug, reaction, severity),
+            (session.get('user_id'), name, age_value, drug, reaction, severity),
         )
         conn.commit()
         conn.close()
@@ -461,15 +544,23 @@ def add():
     except psycopg2.Error:
         flash('Could not add ADR report.', 'danger')
 
-    return redirect(url_for('reports'))
+    return dashboard_redirect_for_role()
 
 
 @app.route('/reports/edit/<int:adr_id>', methods=['GET', 'POST'])
 @login_required
 def edit_report(adr_id):
+    user_id = session.get('user_id')
+    role = session.get('role')
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
+
+        if not can_access_report(cursor, adr_id, user_id, role):
+            conn.close()
+            flash('You do not have permission to edit this ADR report.', 'danger')
+            return dashboard_redirect_for_role()
 
         if request.method == 'POST':
             name = request.form.get('name', '').strip()
@@ -490,44 +581,59 @@ def edit_report(adr_id):
                 flash('Age must be a valid non-negative number.', 'warning')
                 return redirect(url_for('edit_report', adr_id=adr_id))
 
-            cursor.execute(
-                '''
-                UPDATE adr
-                SET name = %s, age = %s, drug = %s, reaction = %s, severity = %s
-                WHERE id = %s
-                ''',
-                (name, age_value, drug, reaction, severity, adr_id),
-            )
+            if role == 'admin':
+                cursor.execute(
+                    'UPDATE adr SET name = %s, age = %s, drug = %s, reaction = %s, severity = %s WHERE id = %s',
+                    (name, age_value, drug, reaction, severity, adr_id),
+                )
+            else:
+                cursor.execute(
+                    'UPDATE adr SET name = %s, age = %s, drug = %s, reaction = %s, severity = %s WHERE id = %s AND user_id = %s',
+                    (name, age_value, drug, reaction, severity, adr_id, user_id),
+                )
             conn.commit()
             conn.close()
             log_activity('EDIT_REPORT', f'Edited ADR report #{adr_id}')
             flash('ADR report updated successfully.', 'success')
-            return redirect(url_for('reports'))
+            return dashboard_redirect_for_role()
 
-        cursor.execute(
-            'SELECT id, name, age, drug, reaction, severity, created_at FROM adr WHERE id = %s',
-            (adr_id,),
-        )
+        if role == 'admin':
+            cursor.execute(
+                'SELECT id, name, age, drug, reaction, severity, created_at FROM adr WHERE id = %s',
+                (adr_id,),
+            )
+        else:
+            cursor.execute(
+                'SELECT id, name, age, drug, reaction, severity, created_at FROM adr WHERE id = %s AND user_id = %s',
+                (adr_id, user_id),
+            )
         adr = cursor.fetchone()
         conn.close()
 
         if not adr:
             flash('ADR record not found.', 'warning')
-            return redirect(url_for('reports'))
+            return dashboard_redirect_for_role()
 
         return render_template('edit.html', adr=adr)
     except psycopg2.Error:
         flash('Unable to edit ADR report right now.', 'danger')
-        return redirect(url_for('reports'))
+        return dashboard_redirect_for_role()
 
 
 @app.route('/reports/delete/<int:adr_id>', methods=['POST'])
 @login_required
 def delete_report(adr_id):
+    user_id = session.get('user_id')
+    role = session.get('role')
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('DELETE FROM adr WHERE id = %s', (adr_id,))
+        if role == 'admin':
+            cursor.execute('DELETE FROM adr WHERE id = %s', (adr_id,))
+        else:
+            cursor.execute('DELETE FROM adr WHERE id = %s AND user_id = %s', (adr_id, user_id))
+
         deleted = cursor.rowcount
         conn.commit()
         conn.close()
@@ -536,54 +642,11 @@ def delete_report(adr_id):
             log_activity('DELETE_REPORT', f'Deleted ADR report #{adr_id}')
             flash('ADR report deleted.', 'warning')
         else:
-            flash('ADR record not found.', 'warning')
+            flash('ADR record not found or not permitted.', 'warning')
     except psycopg2.Error:
         flash('Could not delete ADR report.', 'danger')
 
-    return redirect(url_for('reports'))
-
-
-@app.route('/admin')
-@admin_required
-def admin_panel():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        metrics = get_dashboard_metrics(cursor)
-        chart_data = get_chart_data(cursor)
-
-        cursor.execute('SELECT id, username, role FROM users ORDER BY id ASC')
-        users = cursor.fetchall()
-
-        conn.close()
-
-        return render_template(
-            'admin.html',
-            metrics=metrics,
-            users=users,
-            severity_labels=chart_data['severity_labels'],
-            severity_values=chart_data['severity_values'],
-            drug_labels=chart_data['drug_labels'],
-            drug_values=chart_data['drug_values'],
-        )
-    except psycopg2.Error:
-        flash('Unable to load admin panel.', 'danger')
-        return render_template(
-            'admin.html',
-            metrics={'total_reports': 0, 'todays_reports': 0, 'severe_cases': 0, 'total_users': 0, 'total_drugs': 0},
-            users=[],
-            severity_labels=[],
-            severity_values=[],
-            drug_labels=[],
-            drug_values=[],
-        )
-
-
-@app.route('/users', methods=['GET', 'POST'])
-@admin_required
-def manage_users():
-    return redirect(url_for('admin_panel'))
+    return dashboard_redirect_for_role()
 
 
 @app.route('/users/create', methods=['POST'])
@@ -595,11 +658,11 @@ def create_user():
 
     if not username or not password:
         flash('Username and password are required.', 'warning')
-        return redirect(url_for('admin_panel'))
+        return redirect(url_for('admin_dashboard'))
 
     if role not in ALLOWED_ROLES:
         flash('Invalid role selected.', 'warning')
-        return redirect(url_for('admin_panel'))
+        return redirect(url_for('admin_dashboard'))
 
     try:
         conn = get_db_connection()
@@ -615,7 +678,7 @@ def create_user():
     except psycopg2.Error:
         flash('Unable to create user. Username may already exist.', 'danger')
 
-    return redirect(url_for('admin_panel'))
+    return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/users/delete/<int:user_id>', methods=['POST'])
@@ -623,7 +686,7 @@ def create_user():
 def delete_user(user_id):
     if user_id == session.get('user_id'):
         flash('You cannot delete your own account while logged in.', 'warning')
-        return redirect(url_for('admin_panel'))
+        return redirect(url_for('admin_dashboard'))
 
     try:
         conn = get_db_connection()
@@ -641,7 +704,7 @@ def delete_user(user_id):
     except psycopg2.Error:
         flash('Unable to delete user.', 'danger')
 
-    return redirect(url_for('admin_panel'))
+    return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/users/role/<int:user_id>', methods=['POST'])
@@ -649,12 +712,12 @@ def delete_user(user_id):
 def update_user_role(user_id):
     if user_id == session.get('user_id'):
         flash('You cannot change your own role while logged in.', 'warning')
-        return redirect(url_for('admin_panel'))
+        return redirect(url_for('admin_dashboard'))
 
     new_role = request.form.get('role', '').strip().lower()
     if new_role not in ALLOWED_ROLES:
         flash('Invalid role selected.', 'warning')
-        return redirect(url_for('admin_panel'))
+        return redirect(url_for('admin_dashboard'))
 
     try:
         conn = get_db_connection()
@@ -672,28 +735,31 @@ def update_user_role(user_id):
     except psycopg2.Error:
         flash('Unable to update user role.', 'danger')
 
-    return redirect(url_for('admin_panel'))
+    return redirect(url_for('admin_dashboard'))
 
 
 @app.route('/export/csv')
 @login_required
 def export_adr_csv():
     filters = get_report_filters()
+    role = session.get('role')
+    owner_id = None if role == 'admin' else session.get('user_id')
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        rows = fetch_reports_with_filters(cursor, filters)
+        rows = fetch_reports_with_filters(cursor, filters, user_id=owner_id)
         conn.close()
 
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(['ID', 'Patient Name', 'Age', 'Drug', 'Reaction', 'Severity', 'Reported At'])
+        writer.writerow(['ID', 'Patient Name', 'Age', 'Drug', 'Reaction', 'Severity', 'Reported At', 'Owner'])
 
         for row in rows:
             writer.writerow([
                 row[0], row[1], row[2], row[3], row[4], row[5],
                 row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else '',
+                row[7],
             ])
 
         mem = BytesIO()
@@ -704,7 +770,7 @@ def export_adr_csv():
         return send_file(mem, as_attachment=True, download_name=filename, mimetype='text/csv')
     except psycopg2.Error:
         flash('Unable to export CSV right now.', 'danger')
-        return redirect(url_for('reports'))
+        return dashboard_redirect_for_role()
 
 
 if __name__ == '__main__':

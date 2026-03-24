@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block page_title %}Admin Dashboard{% endblock %}
+
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Total Users</small><h4>{{ metrics.total_users }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Total ADR Reports</small><h4>{{ metrics.total_reports }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Severe Cases</small><h4 class="text-danger">{{ metrics.severe_cases }}</h4></div></div>
+    <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">Today's Reports</small><h4 class="text-primary">{{ metrics.todays_reports }}</h4></div></div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-6">
+        <div class="card stat-card p-3"><h6>Severity Mix</h6><canvas id="severityChart" height="220"></canvas></div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card stat-card p-3"><h6>Top Drugs</h6><canvas id="drugChart" height="220"></canvas></div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-lg-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <h6>Create User</h6>
+                <form method="POST" action="{{ url_for('create_user') }}">
+                    <input class="form-control mb-2" name="username" placeholder="Username" required>
+                    <input type="password" class="form-control mb-2" name="password" placeholder="Password" minlength="8" required>
+                    <select class="form-select mb-3" name="role">
+                        <option value="user">User</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                    <button class="btn btn-primary w-100">Create User</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-8">
+        <div class="panel-wrap p-3">
+            <h6>User Administration</h6>
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th>ID</th><th>Username</th><th>Role</th><th class="text-end">Actions</th></tr></thead>
+                <tbody>
+                {% for user in users %}
+                    <tr>
+                        <td>{{ user[0] }}</td>
+                        <td>{{ user[1] }}</td>
+                        <td><span class="badge {% if user[2] == 'admin' %}text-bg-primary{% else %}text-bg-secondary{% endif %}">{{ user[2] }}</span></td>
+                        <td class="text-end">
+                            {% if user[0] != session.get('user_id') %}
+                            <form method="POST" action="{{ url_for('update_user_role', user_id=user[0]) }}" class="d-inline-flex gap-1">
+                                <select class="form-select form-select-sm" name="role">
+                                    <option value="user" {% if user[2] == 'user' %}selected{% endif %}>user</option>
+                                    <option value="admin" {% if user[2] == 'admin' %}selected{% endif %}>admin</option>
+                                </select>
+                                <button class="btn btn-sm btn-outline-primary">Change Role</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('delete_user', user_id=user[0]) }}" class="d-inline">
+                                <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete user {{ user[1] }}?')">Delete</button>
+                            </form>
+                            {% else %}
+                            <span class="text-muted small">Current session user</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="text-center text-muted py-3">No users found.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="panel-wrap p-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h5 class="mb-0">All ADR Reports</h5>
+        <a class="btn btn-sm btn-outline-success" href="{{ url_for('export_adr_csv', **filters) }}">Export Current Filter (CSV)</a>
+    </div>
+    <form method="GET" class="row g-2 mb-3" action="{{ url_for('admin_dashboard') }}">
+        <div class="col-md-3"><input class="form-control" name="search" value="{{ filters.search }}" placeholder="Search name/reaction"></div>
+        <div class="col-md-2"><input class="form-control" name="drug" value="{{ filters.drug }}" placeholder="Drug"></div>
+        <div class="col-md-2">
+            <select class="form-select" name="severity">
+                <option value="">All severity</option>
+                {% for severity in severity_options %}<option value="{{ severity }}" {% if filters.severity == severity %}selected{% endif %}>{{ severity }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2"><input class="form-control" type="date" name="date_from" value="{{ filters.date_from }}"></div>
+        <div class="col-md-2"><input class="form-control" type="date" name="date_to" value="{{ filters.date_to }}"></div>
+        <div class="col-md-1"><button class="btn btn-outline-primary w-100">Apply</button></div>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table align-middle table-hover">
+            <thead class="table-light"><tr><th>ID</th><th>Owner</th><th>Name</th><th>Age</th><th>Drug</th><th>Reaction</th><th>Severity</th><th>Date</th><th class="text-end">Actions</th></tr></thead>
+            <tbody>
+            {% for adr in adr_list %}
+                <tr>
+                    <td>{{ adr[0] }}</td><td>{{ adr[7] }}</td><td>{{ adr[1] }}</td><td>{{ adr[2] }}</td><td>{{ adr[3] }}</td><td>{{ adr[4] }}</td>
+                    <td><span class="badge {% if adr[5] == 'Severe' %}text-bg-danger{% elif adr[5] == 'Moderate' %}text-bg-warning{% else %}text-bg-success{% endif %}">{{ adr[5] }}</span></td>
+                    <td>{{ adr[6].strftime('%Y-%m-%d') if adr[6] else '-' }}</td>
+                    <td class="text-end">
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('edit_report', adr_id=adr[0]) }}">Edit</a>
+                        <form method="POST" action="{{ url_for('delete_report', adr_id=adr[0]) }}" class="d-inline"><button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this record?');">Delete</button></form>
+                    </td>
+                </tr>
+            {% else %}
+                <tr><td colspan="9" class="text-center text-muted py-4">No ADR reports found.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+new Chart(document.getElementById('severityChart'), {
+    type: 'pie',
+    data: { labels: {{ severity_labels|tojson }}, datasets: [{ data: {{ severity_values|tojson }}, backgroundColor: ['#198754','#ffc107','#dc3545','#0d6efd','#6f42c1'] }] }
+});
+new Chart(document.getElementById('drugChart'), {
+    type: 'bar',
+    data: { labels: {{ drug_labels|tojson }}, datasets: [{ label: 'Reports', data: {{ drug_values|tojson }}, backgroundColor: '#0d6efd' }] },
+    options: { scales: { y: { beginAtZero: true } }, plugins: { legend: { display: false } } }
+});
+</script>
+{% endblock %}

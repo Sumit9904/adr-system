@@ -25,12 +25,10 @@
             <div class="card-body">
                 <h6>Create User</h6>
                 <form method="POST" action="{{ url_for('create_user') }}">
-                    <input class="form-control mb-2" name="username" placeholder="Username" required>
-                    <input type="password" class="form-control mb-2" name="password" placeholder="Password" minlength="8" required>
-                    <select class="form-select mb-3" name="role">
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
-                    </select>
+                    <input class="form-control mb-2" name="username" placeholder="Username (leave empty for auto)">
+                    <div class="alert alert-info py-2 small mb-3">
+                        Role is set to <strong>user</strong> and password is auto-generated.
+                    </div>
                     <button class="btn btn-primary w-100">Create User</button>
                 </form>
             </div>
@@ -59,6 +57,9 @@
                             </form>
                             <form method="POST" action="{{ url_for('delete_user', user_id=user[0]) }}" class="d-inline">
                                 <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete user {{ user[1] }}?')">Delete</button>
+                            </form>
+                            <form method="POST" action="{{ url_for('reset_user_password', user_id=user[0]) }}" class="d-inline">
+                                <button class="btn btn-sm btn-outline-warning" onclick="return confirm('Reset password for {{ user[1] }}?')">Reset Password</button>
                             </form>
                             {% else %}
                             <span class="text-muted small">Current session user</span>

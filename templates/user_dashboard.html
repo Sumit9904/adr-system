@@ -10,6 +10,17 @@
     <div class="col-md-3"><div class="card stat-card p-3"><small class="text-muted">My Drug Count</small><h4 class="text-primary">{{ metrics.total_drugs }}</h4></div></div>
 </div>
 
+<div class="card stat-card mb-4">
+    <div class="card-body">
+        <h6 class="mb-3">Profile</h6>
+        <div class="row g-2">
+            <div class="col-md-4"><strong>Username:</strong> {{ session.get('username') }}</div>
+            <div class="col-md-4"><strong>Role:</strong> {{ session.get('role') }}</div>
+            <div class="col-md-4"><strong>Total Reports Submitted:</strong> {{ metrics.total_reports }}</div>
+        </div>
+    </div>
+</div>
+
 <div class="row g-4 mb-4">
     <div class="col-xl-4">
         <div class="card stat-card">

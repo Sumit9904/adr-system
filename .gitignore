@@ -1,3 +1,4 @@
 adr.db
 .idea/
 __pycache__/
+.env
